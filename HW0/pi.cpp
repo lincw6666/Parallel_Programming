@@ -10,7 +10,7 @@ typedef unsigned long long ull;
 
 
 inline double get_rand() {
-    return ((double)( (((ull)rand()<<22)|(rand()&0x3FFFFE)) ) / 0xFFFFFFFFFFFFF) - 1;
+    return (double)( (((ull)rand()<<31) | rand()) & 0x1FFFFFFFFFFFFF) / 0x1FFFFFFFFFFFFF;
 }
 
 

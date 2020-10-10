@@ -54,17 +54,19 @@ void clampedExpVector(float *values, int *exponents, float *output, int N)
   __pp_vec_int exp, i_zeros, i_ones;
   __pp_mask maskAll, maskValid, maskExpZero, maskTmp;
 
+  // Initialize masks.
+  maskAll = _pp_init_ones();
+
+  // Initlaize vector registers values.
+  _pp_vset_int(i_zeros, 0, maskAll);
+  _pp_vset_int(i_ones, 1, maskAll);
+  _pp_vset_float(clamp, 9.999999f, maskAll);
+
   for (int i = 0; i < N; i += VECTOR_WIDTH)
   {
-    // Initlaize masks.
-    maskAll = _pp_init_ones();
+    // Initialize masks.
     maskValid = _pp_init_ones(N - i);
     maskExpZero = _pp_init_ones(0);
-
-    // Initlaize vector registers values.
-    _pp_vset_int(i_zeros, 0, maskAll);
-    _pp_vset_int(i_ones, 1, maskAll);
-    _pp_vset_float(clamp, 9.999999f, maskAll);
 
     // Load values.
     _pp_vload_float(val, values + i, maskAll);

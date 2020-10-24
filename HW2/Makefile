@@ -8,7 +8,7 @@ ifeq (/usr/bin/clang++-11,$(wildcard /usr/bin/clang++-11*))
     CXX=clang++-11
 endif
 
-CXXFLAGS := -O3 -std=c++17 -Wall
+CXXFLAGS := -O3 -std=c++17 -Wall -pthread
 
 ifeq ($(ASSEMBLE),1)
 	CXXFLAGS += -S

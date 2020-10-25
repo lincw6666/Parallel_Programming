@@ -37,7 +37,7 @@ endif
 
 all: $(TARGET)
 
-%.o: %.cpp test.h
+%.o: %.cpp shishua.h
 ifeq ($(ASSEMBLE),1)
 	if [ ! -d "./assembly" ]; then mkdir "./assembly"; fi
 	$(CXX) $(CXXFLAGS) -c $< -o assembly/$(basename $<)$(SUFFIX).s

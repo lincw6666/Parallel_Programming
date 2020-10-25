@@ -3,7 +3,11 @@
 #include <cstdlib>
 #include <stdlib.h>
 #include <pthread.h>    // For Pthread
+#include "shishua.h"
 using namespace std;
+
+
+#define BUFSIZE 512
 
 
 typedef unsigned long long ull;
@@ -14,10 +18,16 @@ typedef struct thread_arg {
     ull n_tosses;
 } thread_arg_t;
 
+typedef union shishua_buf {
+    uint8_t buf8[BUFSIZE];
+    uint32_t buf32[BUFSIZE>>2];
+} shishua_buf_u;
+
 
 ull g_seed;
 ull g_n_circle = 0;
 pthread_mutex_t mutex_n_circle;
+shishua_buf_u buf __attribute__ ((aligned (64)));
 
 
 void *monte_carlo_pi_estimate(void *arg) {
@@ -54,6 +64,36 @@ int main(int argc, char **argv) {
     double pi_estimate = 0.0;
     pthread_t *thread = NULL;
     thread_arg_t *args = NULL;
+    // For ShiShua
+    SEEDTYPE shishua_seed[4] = {static_cast<SEEDTYPE>(time(NULL)), 0, 0, 0};
+    prng_state s = prng_init(shishua_seed);
+
+    // ShiShua test
+    if (true) {
+        int step = BUFSIZE >> 3, toss;
+        for (toss = 0; toss+step < n_tosses; toss += step) {
+            prng_gen(&s, buf.buf8, sizeof(buf));
+            for (int i = 0; i < (BUFSIZE>>2); i += 2) {
+                x = (double)buf.buf32[i] / 0xFFFFFFFF;
+                y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+                distance_squared = x*x + y*y;
+                if (distance_squared <= 1)
+                    n_circle += 1;
+            }
+        }
+        prng_gen(&s, buf.buf8, sizeof(buf));
+        for (int i = 0; i < (n_tosses-toss)*2; i += 2) {
+            x = (double)buf.buf32[i] / 0xFFFFFFFF;
+            y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+            distance_squared = x*x + y*y;
+            if (distance_squared <= 1)
+                n_circle += 1;
+        }
+        pi_estimate = 4 * n_circle /((double)n_tosses);
+        printf("%.9lf\n", pi_estimate);
+
+        return 0;
+    }
 
     if (n_thread < 1) {
         seed = (ull)time(NULL);

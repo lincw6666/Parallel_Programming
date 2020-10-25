@@ -7,7 +7,8 @@
 using namespace std;
 
 
-#define BUFSIZE 512
+#define BUFSIZE 128
+#define MAX_N_THREAD 1024
 
 
 typedef unsigned long long ull;
@@ -27,7 +28,7 @@ typedef union shishua_buf {
 ull g_seed;
 ull g_n_circle = 0;
 pthread_mutex_t mutex_n_circle;
-shishua_buf_u buf __attribute__ ((aligned (64)));
+prng_state s;
 
 
 void *monte_carlo_pi_estimate(void *arg) {
@@ -53,6 +54,31 @@ void *monte_carlo_pi_estimate(void *arg) {
     pthread_exit(NULL);
 }
 
+void *calculate_n_circle(void *arg) {
+    shishua_buf_u buf __attribute__ ((aligned (64)));
+    ull n_circle = 0;
+    ull n_tosses = *(ull *)arg;
+    int toss;
+    double x, y, distance_squared;
+
+    for (toss = 0; toss < n_tosses; ++toss) {
+        prng_gen(&s, buf.buf8, sizeof(buf));
+        for (int i = 0; i < (BUFSIZE>>2); i += 2) {
+            x = (double)buf.buf32[i] / 0xFFFFFFFF;
+            y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+            distance_squared = x*x + y*y;
+            if (distance_squared <= 1)
+                n_circle += 1;
+        }
+    }
+
+    pthread_mutex_lock(&mutex_n_circle);
+    g_n_circle += n_circle;
+    pthread_mutex_unlock(&mutex_n_circle);
+
+    pthread_exit(NULL);
+}
+
 
 int main(int argc, char **argv) {
     ull n_circle = 0; // # of darts in circle.
@@ -66,12 +92,31 @@ int main(int argc, char **argv) {
     thread_arg_t *args = NULL;
     // For ShiShua
     SEEDTYPE shishua_seed[4] = {static_cast<SEEDTYPE>(time(NULL)), 0, 0, 0};
-    prng_state s = prng_init(shishua_seed);
+    shishua_buf_u buf __attribute__ ((aligned (64)));
+    s = prng_init(shishua_seed);
 
     // ShiShua test
     if (true) {
         int step = BUFSIZE >> 3, toss;
-        for (toss = 0; toss+step < n_tosses; toss += step) {
+        
+        // Prevent using large memory space for @buf.
+        if (n_thread > MAX_N_THREAD) n_thread = MAX_N_THREAD;
+        thread_tosses = (n_tosses/step) / (n_thread+1);
+
+        // Allocate thread structure
+        thread = (pthread_t *)malloc(n_thread * sizeof(pthread_t));
+        // Initialize mutex.
+        pthread_mutex_init(&mutex_n_circle, NULL);
+
+        // Create threads
+        for (ull id = 0; id < n_thread; ++id) {
+            pthread_create(&thread[id],
+                           NULL,
+                           calculate_n_circle,
+                           (void *)&thread_tosses);
+        }
+
+        for (toss = n_thread*thread_tosses*step; toss+step < n_tosses; toss+= step) {
             prng_gen(&s, buf.buf8, sizeof(buf));
             for (int i = 0; i < (BUFSIZE>>2); i += 2) {
                 x = (double)buf.buf32[i] / 0xFFFFFFFF;
@@ -89,8 +134,19 @@ int main(int argc, char **argv) {
             if (distance_squared <= 1)
                 n_circle += 1;
         }
-        pi_estimate = 4 * n_circle /((double)n_tosses);
+
+        // Join threads
+        for (int id = 0; id < n_thread; ++id) {
+            pthread_join(thread[id], NULL);
+        }
+
+        pi_estimate = 4 * (g_n_circle+n_circle) / ((double)n_tosses);
         printf("%.9lf\n", pi_estimate);
+
+        // Destroy mutex.
+        pthread_mutex_destroy(&mutex_n_circle);
+
+        free(thread);
 
         return 0;
     }

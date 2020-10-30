@@ -25,10 +25,10 @@ typedef union shishua_buf {
 } shishua_buf_u;
 
 
-ull g_seed;
+ull g_seed = time(NULL);
+ull *g_shishua_seed;
 ull g_n_circle = 0;
 pthread_mutex_t mutex_n_circle;
-prng_state s;
 
 
 void *monte_carlo_pi_estimate(void *arg) {
@@ -55,13 +55,16 @@ void *monte_carlo_pi_estimate(void *arg) {
 }
 
 void *calculate_n_circle(void *arg) {
-    shishua_buf_u buf __attribute__ ((aligned (64)));
+    thread_arg_t *args = (thread_arg_t *)arg;
     ull n_circle = 0;
-    ull n_tosses = *(ull *)arg;
     int toss;
     double x, y, distance_squared;
+    // For ShiShua
+    SEEDTYPE shishua_seed[4] = {g_shishua_seed[args->thread_id], 0, 0, 0};
+    prng_state s = prng_init(shishua_seed);
+    shishua_buf_u buf __attribute__ ((aligned (64)));
 
-    for (toss = 0; toss < n_tosses; ++toss) {
+    for (toss = 0; toss < args->n_tosses; ++toss) {
         prng_gen(&s, buf.buf8, sizeof(buf));
         for (int i = 0; i < (BUFSIZE>>2); i += 2) {
             x = (double)buf.buf32[i] / 0xFFFFFFFF;
@@ -91,9 +94,9 @@ int main(int argc, char **argv) {
     pthread_t *thread = NULL;
     thread_arg_t *args = NULL;
     // For ShiShua
-    SEEDTYPE shishua_seed[4] = {static_cast<SEEDTYPE>(time(NULL)), 0, 0, 0};
+    SEEDTYPE shishua_seed[4] = {static_cast<SEEDTYPE>(g_seed), 0, 0, 0};
     shishua_buf_u buf __attribute__ ((aligned (64)));
-    s = prng_init(shishua_seed);
+    prng_state s = prng_init(shishua_seed);
 
     // ShiShua test
     if (true) {
@@ -105,15 +108,25 @@ int main(int argc, char **argv) {
 
         // Allocate thread structure
         thread = (pthread_t *)malloc(n_thread * sizeof(pthread_t));
+        args = (thread_arg_t *)malloc(n_thread * sizeof(thread_arg_t));
         // Initialize mutex.
         pthread_mutex_init(&mutex_n_circle, NULL);
 
+        // Initialize global seed.
+        g_shishua_seed = (ull *)malloc(n_thread * sizeof(ull));
+        for (int i = 0; i < n_thread; ++i) {
+            g_seed = ((g_seed * 1103515245U) + 12345U) & 0x7fffffff;
+            g_shishua_seed[i] = g_seed;
+        }
+
         // Create threads
         for (ull id = 0; id < n_thread; ++id) {
+            args[id].thread_id = id;
+            args[id].n_tosses = thread_tosses;
             pthread_create(&thread[id],
                            NULL,
                            calculate_n_circle,
-                           (void *)&thread_tosses);
+                           (void *)&args[id]);
         }
 
         for (toss = n_thread*thread_tosses*step; toss+step < n_tosses; toss+= step) {
@@ -147,6 +160,8 @@ int main(int argc, char **argv) {
         pthread_mutex_destroy(&mutex_n_circle);
 
         free(thread);
+        free(args);
+        free(g_shishua_seed);
 
         return 0;
     }

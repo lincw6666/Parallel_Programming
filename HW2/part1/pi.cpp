@@ -7,7 +7,7 @@
 using namespace std;
 
 
-#define BUFSIZE 128
+#define BUFSIZE 1024
 #define MAX_N_THREAD 1024
 
 
@@ -21,7 +21,7 @@ typedef struct thread_arg {
 
 typedef union shishua_buf {
     uint8_t buf8[BUFSIZE];
-    uint32_t buf32[BUFSIZE>>2];
+    uint16_t buf16[BUFSIZE>>1];
 } shishua_buf_u;
 
 
@@ -58,7 +58,8 @@ void *calculate_n_circle(void *arg) {
     thread_arg_t *args = (thread_arg_t *)arg;
     ull n_circle = 0;
     int toss;
-    double x, y, distance_squared;
+    int16_t x, y;
+    uint32_t distance_squared;
     // For ShiShua
     SEEDTYPE shishua_seed[4] = {g_shishua_seed[args->thread_id], 0, 0, 0};
     prng_state s = prng_init(shishua_seed);
@@ -66,11 +67,11 @@ void *calculate_n_circle(void *arg) {
 
     for (toss = 0; toss < args->n_tosses; ++toss) {
         prng_gen(&s, buf.buf8, sizeof(buf));
-        for (int i = 0; i < (BUFSIZE>>2); i += 2) {
-            x = (double)buf.buf32[i] / 0xFFFFFFFF;
-            y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+        for (int i = 0; i < (BUFSIZE>>1); i += 2) {
+            x = buf.buf16[i];
+            y = buf.buf16[i+1];
             distance_squared = x*x + y*y;
-            if (distance_squared <= 1)
+            if (distance_squared <= 0x7FFF*0x7FFF)
                 n_circle += 1;
         }
     }
@@ -89,7 +90,8 @@ int main(int argc, char **argv) {
     ull n_tosses = atoi(argv[2]);    // # of tosses
     ull thread_tosses = n_tosses / (n_thread+1);
     ull seed;
-    double x, y, distance_squared;
+    int16_t x, y;
+    uint32_t distance_squared;
     double pi_estimate = 0.0;
     pthread_t *thread = NULL;
     thread_arg_t *args = NULL;
@@ -100,7 +102,7 @@ int main(int argc, char **argv) {
 
     // ShiShua test
     if (true) {
-        int step = BUFSIZE >> 3, toss;
+        int step = BUFSIZE >> 2, toss;
         
         // Prevent using large memory space for @buf.
         if (n_thread > MAX_N_THREAD) n_thread = MAX_N_THREAD;
@@ -131,20 +133,20 @@ int main(int argc, char **argv) {
 
         for (toss = n_thread*thread_tosses*step; toss+step < n_tosses; toss+= step) {
             prng_gen(&s, buf.buf8, sizeof(buf));
-            for (int i = 0; i < (BUFSIZE>>2); i += 2) {
-                x = (double)buf.buf32[i] / 0xFFFFFFFF;
-                y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+            for (int i = 0; i < (BUFSIZE>>1); i += 2) {
+                x = buf.buf16[i];
+                y = buf.buf16[i+1];
                 distance_squared = x*x + y*y;
-                if (distance_squared <= 1)
+                if (distance_squared <= 0x7FFF*0x7FFF)
                     n_circle += 1;
             }
         }
         prng_gen(&s, buf.buf8, sizeof(buf));
         for (int i = 0; i < (n_tosses-toss)*2; i += 2) {
-            x = (double)buf.buf32[i] / 0xFFFFFFFF;
-            y = (double)buf.buf32[i+1] / 0xFFFFFFFF;
+            x = buf.buf16[i];
+            y = buf.buf16[i+1];
             distance_squared = x*x + y*y;
-            if (distance_squared <= 1)
+            if (distance_squared <= 0x7FFF*0x7FFF)
                 n_circle += 1;
         }
 

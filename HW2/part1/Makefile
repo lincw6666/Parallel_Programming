@@ -9,16 +9,11 @@ ifeq (/usr/bin/clang++-11,$(wildcard /usr/bin/clang++-11*))
 endif
 
 CXXFLAGS := -O3 -std=c++17 -Wall -pthread
+CXXFLAGS += -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -Rpass-analysis=loop-vectorize
+CXXFLAGS += -mavx2
 
 ifeq ($(ASSEMBLE),1)
 	CXXFLAGS += -S
-endif
-ifeq ($(VECTORIZE),1)
-	CXXFLAGS += -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -Rpass-analysis=loop-vectorize
-	SUFFIX := .vec
-else
-	CXXFLAGS += -fno-vectorize
-	SUFFIX := .novec
 endif
 ifeq ($(RESTRICT),1)
 	SUFFIX := $(SUFFIX).restr

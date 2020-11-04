@@ -34,6 +34,7 @@ static inline void prng_gen(prng_state *s, uint8_t buf[], size_t size) {
   // for a tiny amount of variation stirring.
   // I used the smallest odd numbers to avoid having a magic number.
   __m256i increment = _mm256_set_epi64x(1, 3, 5, 7);
+  __builtin_assume(size == 1024);
   for (size_t i = 0; i < size; i += 128) {
     _mm256_storeu_si256((__m256i*)&buf[i+ 0], o0);
     _mm256_storeu_si256((__m256i*)&buf[i+32], o1);
@@ -86,7 +87,7 @@ static uint64_t phi[16] = {
 prng_state prng_init(SEEDTYPE seed[4]) {
   prng_state s;
   memset(&s, 0, sizeof(prng_state));
-# define STEPS 1
+# define STEPS 8
 # define ROUNDS 13
   uint8_t buf[128 * STEPS];
   // Diffuse first two seed elements in s0, then the last two. Same for s1.

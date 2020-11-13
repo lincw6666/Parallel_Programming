@@ -17,43 +17,58 @@
 //
 void pageRank(Graph g, double *solution, double damping, double convergence)
 {
+    int num_node = num_nodes(g);
+    double equal_prob = 1.0 / num_node;
 
-  // initialize vertex weights to uniform probability. Double
-  // precision scores are used to avoid underflow for large graphs
+    double *score_old = (double *)malloc(sizeof(double) * num_node);
+    int *lonely_nodes = (int *)malloc(sizeof(int) * num_node);
+    int lonely_nodes_size = 0;
+    double lonely_sum = 0.0;
+    double global_diff = 0.0;
 
-  int numNodes = num_nodes(g);
-  double equal_prob = 1.0 / numNodes;
-  for (int i = 0; i < numNodes; ++i)
-  {
-    solution[i] = equal_prob;
-  }
+    // Initialize vertex weights to uniform probability.
+    for (int i = 0; i < num_node; ++i) {
+        solution[i] = equal_prob;
+        
+        // Find nodes with no incoming nodes
+        if (outgoing_size(g, i) == 0) {
+            lonely_nodes[lonely_nodes_size++] = i;
+        }
+    }
 
-  /*
-     For PP students: Implement the page rank algorithm here.  You
-     are expected to parallelize the algorithm using openMP.  Your
-     solution may need to allocate (and free) temporary arrays.
+    do {
+        lonely_sum = 0.0;
+        global_diff = 0.0;
+        
+        // Update @score_old.
+        for (int i = 0; i < num_node; ++i) {
+            score_old[i] = solution[i];
+        }
 
-     Basic page rank pseudocode is provided below to get you started:
+        // Sum up the score of nodes without outgoing edges.
+        for (int i = 0; i < lonely_nodes_size; ++i) {
+            lonely_sum += damping * score_old[lonely_nodes[i]] / num_node;
+        }
 
-     // initialization: see example code above
-     score_old[vi] = 1/numNodes;
+        // Compute new score for all nodes.
+        for (int i = 0; i < num_node; ++i) {
+            const Vertex *start = incoming_begin(g, i);
+            const Vertex *end = incoming_end(g, i);
+            double sum = 0.0;
 
-     while (!converged) {
+            for (const Vertex *v = start; v != end; ++v) {
+                sum += score_old[*v] / outgoing_size(g, *v);
+            }
+            sum = (damping * sum) + (1.0-damping) / num_node;
+            
+            solution[i] = sum + lonely_sum;
+        }
 
-       // compute score_new[vi] for all nodes vi:
-       score_new[vi] = sum over all nodes vj reachable from incoming edges
-                          { score_old[vj] / number of edges leaving vj  }
-       score_new[vi] = (damping * score_new[vi]) + (1.0-damping) / numNodes;
+        for (int i = 0; i < num_node; ++i) {
+            global_diff += abs(solution[i] - score_old[i]);
+        }
+    } while (global_diff >= convergence);
 
-       score_new[vi] += sum over all nodes v in graph with no outgoing edges
-                          { damping * score_old[v] / numNodes }
-
-       // compute how much per-node scores have changed
-       // quit once algorithm has converged
-
-       global_diff = sum over all nodes vi { abs(score_new[vi] - score_old[vi]) };
-       converged = (global_diff < convergence)
-     }
-
-   */
+    free(score_old);
+    free(lonely_nodes);
 }

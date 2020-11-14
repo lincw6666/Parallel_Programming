@@ -20,55 +20,78 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
     int num_node = num_nodes(g);
     double equal_prob = 1.0 / num_node;
 
-    double *score_old = (double *)malloc(sizeof(double) * num_node);
-    int *lonely_nodes = (int *)malloc(sizeof(int) * num_node);
-    int lonely_nodes_size = 0;
+    double *inter_score = (double *)malloc(sizeof(double) * num_node);
     double lonely_sum = 0.0;
     double global_diff = 0.0;
 
+    // For OpenMP
+    int max_thread = omp_get_max_threads();
+    double thread_lonely_sum[max_thread][4];
+    double thread_global_diff[max_thread][4];
+
     // Initialize vertex weights to uniform probability.
+#pragma omp parallel for
     for (int i = 0; i < num_node; ++i) {
         solution[i] = equal_prob;
-        
-        // Find nodes with no incoming nodes
-        if (outgoing_size(g, i) == 0) {
-            lonely_nodes[lonely_nodes_size++] = i;
-        }
     }
 
     do {
         lonely_sum = 0.0;
         global_diff = 0.0;
         
-        // Update @score_old.
-        for (int i = 0; i < num_node; ++i) {
-            score_old[i] = solution[i];
+        // Initialize @thread_lonely_sum, @thread_global_diff
+        for (int i = 0; i < max_thread; ++i) {
+            thread_lonely_sum[i][0] = 0.0;
+            thread_global_diff[i][0] = 0.0;
         }
 
-        // Sum up the score of nodes without outgoing edges.
-        for (int i = 0; i < lonely_nodes_size; ++i) {
-            lonely_sum += damping * score_old[lonely_nodes[i]] / num_node;
+        // Calculate the intermeidate score.
+#pragma omp parallel
+{
+        int id = omp_get_thread_num();
+        int n_thrds = omp_get_num_threads();
+
+        for (int i = id; i < num_node; i += n_thrds) {
+            int div = outgoing_size(g, i);
+
+            if (div == 0) {
+                thread_lonely_sum[id][0] += solution[i];
+            }
+            else inter_score[i] = solution[i] / div;
         }
+ }
+
+        // Get @lonely_sum
+        for (int i = 0; i < max_thread; ++i) {
+            lonely_sum += thread_lonely_sum[i][0];
+        }
+        lonely_sum *= damping / num_node;
 
         // Compute new score for all nodes.
-        for (int i = 0; i < num_node; ++i) {
+#pragma omp parallel
+{
+        int id = omp_get_thread_num();
+        int n_thrds = omp_get_num_threads();
+
+        for (int i = id; i < num_node; i += n_thrds) {
             const Vertex *start = incoming_begin(g, i);
             const Vertex *end = incoming_end(g, i);
             double sum = 0.0;
 
             for (const Vertex *v = start; v != end; ++v) {
-                sum += score_old[*v] / outgoing_size(g, *v);
+                sum += inter_score[*v];
             }
-            sum = (damping * sum) + (1.0-damping) / num_node;
+            sum = (damping * sum) + (1.0-damping) / num_node + lonely_sum;
             
-            solution[i] = sum + lonely_sum;
+            thread_global_diff[id][0] += abs(solution[i] - sum);
+            solution[i] = sum;
         }
+}
 
-        for (int i = 0; i < num_node; ++i) {
-            global_diff += abs(solution[i] - score_old[i]);
+        for (int i = 0; i < max_thread; ++i) {
+            global_diff += thread_global_diff[i][0];
         }
     } while (global_diff >= convergence);
 
-    free(score_old);
-    free(lonely_nodes);
+    free(inter_score);
 }

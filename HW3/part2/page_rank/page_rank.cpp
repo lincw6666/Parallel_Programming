@@ -76,14 +76,16 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
         for (int i = id; i < num_node; i += n_thrds) {
             const Vertex *start = incoming_begin(g, i);
             const Vertex *end = incoming_end(g, i);
-            double sum = 0.0;
+            double sum = 0.0, tmp;
 
             for (const Vertex *v = start; v != end; ++v) {
                 sum += inter_score[*v];
             }
             sum = (damping * sum) + (1.0-damping) / num_node + lonely_sum;
             
-            thread_global_diff[id][0] += abs(solution[i] - sum);
+            tmp = solution[i] - sum;
+            if (tmp < 0) tmp = -tmp;
+            thread_global_diff[id][0] += tmp;
             solution[i] = sum;
         }
 }

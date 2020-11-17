@@ -31,12 +31,15 @@ void vertex_set_init(vertex_set *list, int count)
 void top_down_step(
     Graph g,
     vertex_set *frontier,
-    vertex_set *new_frontier,
-    int *distances)
+    uint64_t *visit,
+    uint64_t *out,
+    int *distances,
+    const int &level,
+    const uint32_t &bitmask_size)
 {
-    for (int i = 0; i < frontier->count; i++)
-    {
 
+#pragma omp parallel for schedule(guided, 128)
+    for (int i = 0; i < frontier->count; i++) {
         int node = frontier->vertices[i];
 
         int start_edge = g->outgoing_starts[node];
@@ -45,17 +48,41 @@ void top_down_step(
                            : g->outgoing_starts[node + 1];
 
         // attempt to add all neighbors to the new frontier
-        for (int neighbor = start_edge; neighbor < end_edge; neighbor++)
-        {
+        for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
             int outgoing = g->outgoing_edges[neighbor];
 
-            if (distances[outgoing] == NOT_VISITED_MARKER)
-            {
-                distances[outgoing] = distances[node] + 1;
-                int index = new_frontier->count++;
-                new_frontier->vertices[index] = outgoing;
+            if ((~visit[outgoing>>6]) & (1UL<<(outgoing&0x3F))) {
+            #pragma omp atomic
+                visit[outgoing>>6] |= 1UL << (outgoing&0x3F);
+            #pragma omp atomic
+                out[outgoing>>6] |= 1UL << (outgoing&0x3F);
             }
         }
+    }
+
+    frontier->count = 0;
+    for (int i = 0; i < bitmask_size-1; i++) {
+        if (out[i]) {
+            for (int j = 0; j < 64; j++) {
+                if (out[i] & (1UL<<j)) {
+                    frontier->vertices[frontier->count++] = (i<<6) + j;
+                    distances[(i<<6) + j] = level;
+                }
+            }
+            out[i] = 0;
+        }
+    }
+
+    uint32_t mask = bitmask_size - 1;
+
+    if (out[mask]) {
+        for (int j = 0; j < 64; j++) {
+            if (out[mask] & (1UL<<j)) {
+                frontier->vertices[frontier->count++] = (mask<<6) + j;
+                distances[(mask<<6) + j] = level;
+            }
+        }
+        out[mask] = 0;
     }
 }
 
@@ -65,44 +92,38 @@ void top_down_step(
 // distance to the root is stored in sol.distances.
 void bfs_top_down(Graph graph, solution *sol)
 {
+    int level = 1;
+    const uint32_t bitmask_size = (graph->num_nodes + 63) / 64;
+    uint64_t *visit = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
+    uint64_t *out = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
 
     vertex_set list1;
-    vertex_set list2;
     vertex_set_init(&list1, graph->num_nodes);
-    vertex_set_init(&list2, graph->num_nodes);
 
     vertex_set *frontier = &list1;
-    vertex_set *new_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
-    for (int i = 0; i < graph->num_nodes; i++)
+#pragma omp parallel for
+    for (int i = 0; i < graph->num_nodes; i++) {
         sol->distances[i] = NOT_VISITED_MARKER;
-
-    // setup frontier with the root node
-    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
-    sol->distances[ROOT_NODE_ID] = 0;
-
-    while (frontier->count != 0)
-    {
-
-#ifdef VERBOSE
-        double start_time = CycleTimer::currentSeconds();
-#endif
-
-        vertex_set_clear(new_frontier);
-
-        top_down_step(graph, frontier, new_frontier, sol->distances);
-
-#ifdef VERBOSE
-        double end_time = CycleTimer::currentSeconds();
-        printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
-#endif
-
-        // swap pointers
-        vertex_set *tmp = frontier;
-        frontier = new_frontier;
-        new_frontier = tmp;
     }
+#pragma omp parallel for
+    for (int i = 0; i < bitmask_size; i++) {
+        visit[i] = out[i] = 0;
+    }
+
+    // Set the distance of ROOT_NODE_ID
+    sol->distances[ROOT_NODE_ID] = 0;
+    visit[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
+    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+
+    while (frontier->count != 0) {
+        top_down_step(graph, frontier, visit, out, sol->distances, level, bitmask_size);
+        ++level;
+    }
+
+    free(visit);
+    free(out);
 }
 
 void bottom_up_step(

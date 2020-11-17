@@ -104,6 +104,45 @@ void bfs_top_down(Graph graph, solution *sol)
     }
 }
 
+void bottom_up_step(
+    graph *g,
+    vertex_set *frontier,
+    int *distances,
+    int level)
+{
+    int frontier_count = 0;
+
+#pragma omp parallel
+{
+    #pragma omp for reduction(+: frontier_count)
+    for (int i = 0; i < g->num_nodes; i++) {
+        // If the node is not visited
+        if (frontier->vertices[i] == 0) {
+            int start_edge = g->incoming_starts[i];
+            int end_edge = (i == g->num_nodes - 1)
+                            ? g->num_edges
+                            : g->incoming_starts[i + 1];
+
+            // To see whether its parent is in the frontier
+            for(int parent = start_edge; parent < end_edge; parent++) {
+                int incoming = g->incoming_edges[parent];
+
+                // Add the node into new frontier if its parent is already in
+                // the frontier
+                if(frontier->vertices[incoming] == level) {
+                    distances[i] = level;
+                    frontier->vertices[i] = level + 1;
+                    ++frontier_count;
+                    break;
+                }
+            }
+        }
+    }
+} // OpenMP End
+
+    frontier->count = frontier_count;
+}
+
 void bfs_bottom_up(Graph graph, solution *sol)
 {
     // For PP students:
@@ -117,6 +156,30 @@ void bfs_bottom_up(Graph graph, solution *sol)
     // As was done in the top-down case, you may wish to organize your
     // code by creating subroutine bottom_up_step() that is called in
     // each step of the BFS process.
+    int level = 1;
+
+    vertex_set list1;
+    vertex_set_init(&list1, graph->num_nodes);
+
+    vertex_set *frontier = &list1;
+
+    // initialize all nodes to NOT_VISITED
+#pragma omp parallel for
+    for (int i = 0; i < graph->num_nodes; i++) {
+        sol->distances[i] = NOT_VISITED_MARKER;
+        frontier->vertices[i] = 0;
+    }
+
+    // Set the distance of ROOT_NODE_ID
+    sol->distances[ROOT_NODE_ID] = 0;
+    frontier->vertices[ROOT_NODE_ID] = 1;
+    frontier->count = 1;
+
+    while (frontier->count != 0) {
+        vertex_set_clear(frontier);
+        bottom_up_step(graph, frontier, sol->distances, level);
+        ++level;
+    }
 }
 
 void bfs_hybrid(Graph graph, solution *sol)

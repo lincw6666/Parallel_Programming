@@ -12,6 +12,7 @@
 
 #define ROOT_NODE_ID 0
 #define NOT_VISITED_MARKER -1
+#define FRONTIER_THRESHOLD (800000)
 
 void vertex_set_clear(vertex_set *list)
 {
@@ -30,59 +31,51 @@ void vertex_set_init(vertex_set *list, int count)
 // new_frontier.
 void top_down_step(
     Graph g,
-    vertex_set *frontier,
+    int &frontier_count,
+    uint64_t *frontier,
     uint64_t *visit,
     uint64_t *out,
     int *distances,
     const int &level,
     const uint32_t &bitmask_size)
 {
+    frontier_count = 0;
 
-#pragma omp parallel for schedule(guided, 128)
-    for (int i = 0; i < frontier->count; i++) {
-        int node = frontier->vertices[i];
+#pragma omp parallel for reduction(+: frontier_count) schedule(guided, 512)
+    for (int mask = 0; mask < bitmask_size; mask++) {
+        // If there exists frontier
+        if (frontier[mask]) {
+            for (int i = 0; i < 64; i++) {
+                if (frontier[mask] & (1UL << i)) {
+                    int node = (mask<<6) + i;
 
-        int start_edge = g->outgoing_starts[node];
-        int end_edge = (node == g->num_nodes - 1)
-                           ? g->num_edges
-                           : g->outgoing_starts[node + 1];
+                    int start_edge = g->outgoing_starts[node];
+                    int end_edge = (node == g->num_nodes - 1)
+                                       ? g->num_edges
+                                       : g->outgoing_starts[node + 1];
 
-        // attempt to add all neighbors to the new frontier
-        for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
-            int outgoing = g->outgoing_edges[neighbor];
+                    // attempt to add all neighbors to the new frontier
+                    for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+                        int outgoing = g->outgoing_edges[neighbor];
 
-            if ((~visit[outgoing>>6]) & (1UL<<(outgoing&0x3F))) {
-            #pragma omp atomic
-                visit[outgoing>>6] |= 1UL << (outgoing&0x3F);
-            #pragma omp atomic
-                out[outgoing>>6] |= 1UL << (outgoing&0x3F);
-            }
-        }
-    }
-
-    frontier->count = 0;
-    for (int i = 0; i < bitmask_size-1; i++) {
-        if (out[i]) {
-            for (int j = 0; j < 64; j++) {
-                if (out[i] & (1UL<<j)) {
-                    frontier->vertices[frontier->count++] = (i<<6) + j;
-                    distances[(i<<6) + j] = level;
+                        if ((~visit[outgoing>>6]) & (1UL<<(outgoing&0x3F))) {
+                        #pragma omp atomic
+                            visit[outgoing>>6] |= 1UL << (outgoing&0x3F);
+                        #pragma omp atomic
+                            out[outgoing>>6] |= 1UL << (outgoing&0x3F);
+                            distances[outgoing] = level;
+                            ++frontier_count;
+                        }
+                    }
                 }
             }
-            out[i] = 0;
         }
     }
 
-    uint32_t mask = bitmask_size - 1;
-
-    if (out[mask]) {
-        for (int j = 0; j < 64; j++) {
-            if (out[mask] & (1UL<<j)) {
-                frontier->vertices[frontier->count++] = (mask<<6) + j;
-                distances[(mask<<6) + j] = level;
-            }
-        }
-        out[mask] = 0;
+#pragma omp parallel for
+    for (int i = 0; i < bitmask_size; i++) {
+        frontier[i] = out[i];
+        out[i] = 0;
     }
 }
 
@@ -92,15 +85,11 @@ void top_down_step(
 // distance to the root is stored in sol.distances.
 void bfs_top_down(Graph graph, solution *sol)
 {
-    int level = 1;
+    int frontier_count = 1, level = 1;
     const uint32_t bitmask_size = (graph->num_nodes + 63) / 64;
+    uint64_t *frontier = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
     uint64_t *visit = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
     uint64_t *out = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
-
-    vertex_set list1;
-    vertex_set_init(&list1, graph->num_nodes);
-
-    vertex_set *frontier = &list1;
 
     // initialize all nodes to NOT_VISITED
 #pragma omp parallel for
@@ -109,19 +98,20 @@ void bfs_top_down(Graph graph, solution *sol)
     }
 #pragma omp parallel for
     for (int i = 0; i < bitmask_size; i++) {
-        visit[i] = out[i] = 0;
+        frontier[i] = visit[i] = out[i] = 0;
     }
 
     // Set the distance of ROOT_NODE_ID
     sol->distances[ROOT_NODE_ID] = 0;
     visit[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
-    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    frontier[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
 
-    while (frontier->count != 0) {
-        top_down_step(graph, frontier, visit, out, sol->distances, level, bitmask_size);
+    while (frontier_count != 0) {
+        top_down_step(graph, frontier_count, frontier, visit, out, sol->distances, level, bitmask_size);
         ++level;
     }
 
+    free(frontier);
     free(visit);
     free(out);
 }
@@ -129,7 +119,7 @@ void bfs_top_down(Graph graph, solution *sol)
 void bottom_up_step(
     graph *g,
     int &frontier_count,
-    const uint64_t *visit,
+    uint64_t *visit,
     uint64_t *out,
     int *distances,
     const int &level,
@@ -139,7 +129,7 @@ void bottom_up_step(
 
 #pragma omp parallel
 {
-    #pragma omp for reduction(+: frontier_count) schedule(guided, 1024) nowait
+#pragma omp for reduction(+: frontier_count) schedule(guided, 512) nowait
     for (uint32_t mask = 0; mask < bitmask_size-1; mask++) {
         // If there exists nodes not visited
         if (~visit[mask]) {
@@ -206,6 +196,12 @@ void bottom_up_step(
 } // OpenMP End
 
     frontier_count = local_frontier_count;
+
+#pragma omp parallel for
+    for (int i = 0; i < bitmask_size; i++) {
+        out[i] &= ~visit[i];
+        visit[i] |= out[i];
+    }
 }
 
 void bfs_bottom_up(Graph graph, solution *sol)
@@ -241,12 +237,7 @@ void bfs_bottom_up(Graph graph, solution *sol)
     visit[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
 
     while (frontier_count != 0) {
-        frontier_count = 0;
         bottom_up_step(graph, frontier_count, visit, out, sol->distances, level, bitmask_size);
-    #pragma omp parallel for
-        for (int i = 0; i < bitmask_size; i++) {
-            visit[i] |= out[i];
-        }
         ++level;
     }
 
@@ -260,4 +251,41 @@ void bfs_hybrid(Graph graph, solution *sol)
     //
     // You will need to implement the "hybrid" BFS here as
     // described in the handout.
+    int frontier_count = 1, level = 1;
+    const uint32_t bitmask_size = (graph->num_nodes + 63) / 64;
+    uint64_t *frontier = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
+    uint64_t *visit = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
+    uint64_t *out = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
+
+    // initialize all nodes to NOT_VISITED
+#pragma omp parallel for
+    for (int i = 0; i < graph->num_nodes; i++) {
+        sol->distances[i] = NOT_VISITED_MARKER;
+    }
+#pragma omp parallel for
+    for (int i = 0; i < bitmask_size; i++) {
+        frontier[i] = visit[i] = out[i] = 0;
+    }
+
+    // Set the distance of ROOT_NODE_ID
+    sol->distances[ROOT_NODE_ID] = 0;
+    visit[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
+    frontier[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
+
+    while (frontier_count != 0 && frontier_count < FRONTIER_THRESHOLD) {
+        top_down_step(graph, frontier_count, frontier, visit, out, sol->distances, level, bitmask_size);
+        ++level;
+    }
+    while (frontier_count >= FRONTIER_THRESHOLD) {
+        bottom_up_step(graph, frontier_count, visit, frontier, sol->distances, level, bitmask_size);
+        ++level;
+    }
+    while (frontier_count != 0) {
+        top_down_step(graph, frontier_count, frontier, visit, out, sol->distances, level, bitmask_size);
+        ++level;
+    }
+
+    free(frontier);
+    free(visit);
+    free(out);
 }

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <cstddef>
 #include <omp.h>
+#include <stdint.h>
 
 #include "../common/CycleTimer.h"
 #include "../common/graph.h"
@@ -106,41 +107,84 @@ void bfs_top_down(Graph graph, solution *sol)
 
 void bottom_up_step(
     graph *g,
-    vertex_set *frontier,
+    int &frontier_count,
+    const uint64_t *visit,
+    uint64_t *out,
     int *distances,
-    int level)
+    const int &level,
+    const uint32_t &bitmask_size)
 {
-    int frontier_count = 0;
+    int local_frontier_count = 0;
 
 #pragma omp parallel
 {
-    #pragma omp for reduction(+: frontier_count)
-    for (int i = 0; i < g->num_nodes; i++) {
-        // If the node is not visited
-        if (frontier->vertices[i] == 0) {
-            int start_edge = g->incoming_starts[i];
-            int end_edge = (i == g->num_nodes - 1)
-                            ? g->num_edges
-                            : g->incoming_starts[i + 1];
+    #pragma omp for reduction(+: frontier_count) schedule(guided, 1024) nowait
+    for (uint32_t mask = 0; mask < bitmask_size-1; mask++) {
+        // If there exists nodes not visited
+        if (~visit[mask]) {
+            for (uint32_t i = 0; i < 64; i++) {
+                // Check whether such node is not visited
+                if ((~visit[mask]) & (1UL<<i)) {
+                    uint32_t node = (mask<<6) + i;
+                    int start_edge = g->incoming_starts[node];
+                    int end_edge = (node == g->num_nodes - 1)
+                                    ? g->num_edges
+                                    : g->incoming_starts[node + 1];
 
-            // To see whether its parent is in the frontier
-            for(int parent = start_edge; parent < end_edge; parent++) {
-                int incoming = g->incoming_edges[parent];
+                    // To see whether its parent is in the frontier
+                    for(int parent = start_edge; parent < end_edge; parent++) {
+                        uint32_t incoming = g->incoming_edges[parent];
 
-                // Add the node into new frontier if its parent is already in
-                // the frontier
-                if(frontier->vertices[incoming] == level) {
-                    distances[i] = level;
-                    frontier->vertices[i] = level + 1;
-                    ++frontier_count;
-                    break;
+                        // Add the node into new frontier if its parent is already in
+                        // the frontier
+                        if(visit[incoming>>6] & (1UL<<(incoming&0x3F))) {
+                            distances[node] = level;
+                            out[node>>6] |= 1UL << (node&0x3F);
+                            ++local_frontier_count;
+                            break;
+                        }
+                    }
                 }
             }
         }
     }
+
+#pragma omp master
+{
+    uint32_t mask = bitmask_size - 1;
+
+    if (~visit[mask]) {
+        for (uint32_t i = 0; i < 64; i++) {
+            uint32_t node = (mask<<6) + i;
+            if (node >= g->num_nodes) break;
+
+            if ((~visit[mask]) & (1UL<<i)) {
+                int start_edge = g->incoming_starts[node];
+                int end_edge = (node == g->num_nodes - 1)
+                                ? g->num_edges
+                                : g->incoming_starts[node + 1];
+
+                // To see whether its parent is in the frontier
+                for(int parent = start_edge; parent < end_edge; parent++) {
+                    uint32_t incoming = g->incoming_edges[parent];
+
+                    // Add the node into new frontier if its parent is already in
+                    // the frontier
+                    if(visit[incoming>>6] & (1UL<<(incoming&0x3F))) {
+                        distances[node] = level;
+                        out[node>>6] |= 1UL << (node&0x3F);
+                        ++local_frontier_count;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 } // OpenMP End
 
-    frontier->count = frontier_count;
+    frontier_count = local_frontier_count;
 }
 
 void bfs_bottom_up(Graph graph, solution *sol)
@@ -156,30 +200,37 @@ void bfs_bottom_up(Graph graph, solution *sol)
     // As was done in the top-down case, you may wish to organize your
     // code by creating subroutine bottom_up_step() that is called in
     // each step of the BFS process.
-    int level = 1;
-
-    vertex_set list1;
-    vertex_set_init(&list1, graph->num_nodes);
-
-    vertex_set *frontier = &list1;
+    int frontier_count = 1, level = 1;
+    const uint32_t bitmask_size = (graph->num_nodes + 63) / 64;
+    uint64_t *visit = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
+    uint64_t *out = (uint64_t *)malloc(sizeof(uint64_t) * bitmask_size);
 
     // initialize all nodes to NOT_VISITED
 #pragma omp parallel for
     for (int i = 0; i < graph->num_nodes; i++) {
         sol->distances[i] = NOT_VISITED_MARKER;
-        frontier->vertices[i] = 0;
+    }
+#pragma omp parallel for
+    for (int i = 0; i < bitmask_size; i++) {
+        visit[i] = out[i] = 0;
     }
 
     // Set the distance of ROOT_NODE_ID
     sol->distances[ROOT_NODE_ID] = 0;
-    frontier->vertices[ROOT_NODE_ID] = 1;
-    frontier->count = 1;
+    visit[ROOT_NODE_ID >> 6] |= 1UL << (ROOT_NODE_ID&0x3F);
 
-    while (frontier->count != 0) {
-        vertex_set_clear(frontier);
-        bottom_up_step(graph, frontier, sol->distances, level);
+    while (frontier_count != 0) {
+        frontier_count = 0;
+        bottom_up_step(graph, frontier_count, visit, out, sol->distances, level, bitmask_size);
+    #pragma omp parallel for
+        for (int i = 0; i < bitmask_size; i++) {
+            visit[i] |= out[i];
+        }
         ++level;
     }
+
+    free(visit);
+    free(out);
 }
 
 void bfs_hybrid(Graph graph, solution *sol)

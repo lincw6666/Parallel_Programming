@@ -16,7 +16,7 @@ using namespace cv::xfeatures2d;
 using namespace std;
 #define NUM_KP 1500
 #define PTHREAD
-#define nthread 8
+#define nthread 12
 int n_times=100000;
 
 struct KP{
@@ -117,10 +117,11 @@ void *cal(void *para){
         int Lines = 0;
         int t1, t2, t3, t4;
         for (int j = 0; j < 4; ++j){
-            seed = seed*(thread_arg->thread_id*thread_arg->step+i);
+            seed = seed*(thread_arg->thread_id*thread_arg->step+i+1);
             // cout<<"seed = "<<seed<<endl;
 
-            int rnad_Num = su_rand(seed)%thread_arg->len;
+            seed = su_rand(seed);
+            int rnad_Num = seed%thread_arg->len;
             // cout<<"seed = "<<seed<<endl;
             // cout<<"rand = "<<rnad_Num<<endl;
             Cor[j][0] = thread_arg->CorList[rnad_Num][0];
@@ -480,9 +481,11 @@ int main(int argc, const char* argv[])
         if(CorList[c_len][0]<=0)
             break;
     }
-    struct timeval start, end;
-    struct timeval  w_start, w_end;
-    unsigned long duration, w_duration;
+
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // RANSAC
     double **ans_H;
@@ -490,12 +493,17 @@ int main(int argc, const char* argv[])
     for (int i = 0; i < 3; ++i) {
         ans_H[i] = new double[3];
     }
-    
-    gettimeofday(&start, NULL);
     cal_ransac(CorList, c_len, ans_H);
-    gettimeofday(&end, NULL);
-    duration = 1000000 * (end.tv_sec-start.tv_sec)+ end.tv_usec-start.tv_usec;
-    cout<<"method : pthread ransac\niter : "<<n_times<<"\ntime : "<< duration << "s"<<endl;
+
+    // -----> RANSAC time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    cout << "RANSAC execution time: " << setprecision(6) << elapsed << endl;
+    // <-----
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // Warp images
     const Mat img1 = imread("le2.jpg", IMREAD_COLOR); // Load as grayscale
@@ -532,7 +540,6 @@ int main(int argc, const char* argv[])
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
     int step = output_shape[0] / nthread;
     
-    gettimeofday(&w_start, NULL);
     for(int i = 0; i < nthread; i++){
         thread_arg[i].thread_id = i;
         thread_arg[i].start = i * step;
@@ -549,8 +556,8 @@ int main(int argc, const char* argv[])
     // Stitch image
     // out_img = (uint8_t *)(warp((const uint8_t *)img1.data, img_shape, ans_H, out_img, output_shape));
 
-   // 回收性質設定
-   pthread_attr_destroy(&attr);
+    // 回收性質設定
+    pthread_attr_destroy(&attr);
     void *status;
     
     for(int i = 0; i < nthread; i++){
@@ -565,10 +572,14 @@ int main(int argc, const char* argv[])
             }
         }
     }
-    gettimeofday(&w_end, NULL);    
-    w_duration = 1000000 * (w_end.tv_sec-w_start.tv_sec)+ w_end.tv_usec-w_start.tv_usec;
-    cout<<"method : pthread warp\ntime : "<< w_duration << "s"<<endl;
-    cout<<"method : pthread total \nthread num : "<<nthread<<"\ntime : "<< duration + w_duration << "s"<<endl;
+
+    // -----> Warping time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    cout << "Warping execution time: " << setprecision(6) << elapsed << endl;
+    // <-----
 
     // Draw output image
     Mat result(output_shape[0], output_shape[1], CV_8UC3, (void *)out_img);
@@ -586,6 +597,6 @@ int main(int argc, const char* argv[])
         delete ans_H[i];
     }
     delete ans_H;
-    
+
     return 0;
 }

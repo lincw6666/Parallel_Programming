@@ -46,8 +46,8 @@ typedef struct
     int *output_shape;
 } Arg2; // 傳入 thread 的參數型別
 
-int index_array[12][4];
-int line_array[12];
+int index_array[16][4];
+int line_array[16];
 int su_rand(unsigned int seed)
 {
     int32_t val = ((seed * 1103515245U) + 12345U) & 0x7fffffff;
@@ -503,8 +503,6 @@ int main(int argc, const char* argv[])
     cout << "RANSAC execution time: " << setprecision(6) << elapsed << endl;
     // <-----
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
     // Warp images
     const Mat img1 = imread("le2.jpg", IMREAD_COLOR); // Load as grayscale
     const Mat img2 = imread("ri.jpg", IMREAD_COLOR); // Load as grayscale
@@ -520,6 +518,8 @@ int main(int argc, const char* argv[])
             ans_H[i][j] = H_inv.at<double>(i, j);
         }
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     img_shape[0] = img1.rows;
     img_shape[1] = img1.cols;

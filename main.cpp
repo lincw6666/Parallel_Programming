@@ -290,9 +290,9 @@ void* warp(
 int main(int argc, const char* argv[])
 {
     // 放右邊的圖
-    string imname1 = "1.jpg";
+    string imname1 = "le2.jpg";
     // 放左邊的圖
-    string imname2 = "2.jpg";
+    string imname2 = "ri.jpg";
     // 讀取兩張圖的SIFT並做brute force match
     double ** CorList = sift_match(imname1, imname2);
     // 計算特徵點的數量
@@ -313,7 +313,7 @@ int main(int argc, const char* argv[])
     for (int i = 0; i < 3; ++i) {
         ans_H[i] = new double[3];
     }   
-    ran ransac(10000);
+    ran ransac(100000);
     ransac.cal_ransac(CorList, c_len, ans_H);
 
     // -----> RANSAC time
@@ -323,8 +323,6 @@ int main(int argc, const char* argv[])
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     cout << "RANSAC execution time: " << setprecision(6) << elapsed << endl;
     // <-----
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // Warp images
     const Mat img1 = imread(imname1, IMREAD_COLOR); // Load as grayscale
@@ -341,6 +339,8 @@ int main(int argc, const char* argv[])
             ans_H[i][j] = H_inv.at<double>(i, j);
         }
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     img_shape[0] = img1.rows;
     img_shape[1] = img1.cols;
@@ -366,6 +366,14 @@ int main(int argc, const char* argv[])
         }
     }
 
+    // -----> Warping time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    cout << "Warping execution time: " << setprecision(6) << elapsed << endl;
+    // <-----
+
     // Draw output image
     Mat result(output_shape[0], output_shape[1], CV_8UC3, (void *)out_img);
     imwrite("warp_result.jpg", result);
@@ -382,14 +390,6 @@ int main(int argc, const char* argv[])
         delete ans_H[i];
     }
     delete ans_H;
-
-    // -----> Warping time
-    clock_gettime(CLOCK_MONOTONIC, &finish);
-
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    cout << "Warping execution time: " << setprecision(6) << elapsed << endl;
-    // <-----
 
     return 0;
 }

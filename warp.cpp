@@ -71,8 +71,8 @@ void* warp(
 
 void debug(void)
 {
-    const Mat img1 = imread("1.jpg", 0); // Load as grayscale
-    const Mat img2 = imread("2.jpg", 0); // Load as grayscale
+    const Mat img1 = imread("le2.jpg", 0); // Load as grayscale
+    const Mat img2 = imread("ri.jpg", 0); // Load as grayscale
 
     // Keypoints detection
     Ptr<SiftFeatureDetector> detector = SiftFeatureDetector::create();
@@ -127,7 +127,21 @@ void debug(void)
         scene.push_back( keypoints_2[ good_matches[i].trainIdx ].pt );
     }
 
-    Mat H = findHomography(obj, scene, RANSAC);
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    Mat H = findHomography(obj, scene, RANSAC, 3, noArray(), 100000, 0.999999);
+
+    // -----> RANSAC time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    std::cout << "RANSAC execution time: " << std::setprecision(6) << elapsed << std::endl;
+    // <-----
+
     Mat H_inv = H.inv();
     double *_H = (double *)malloc(H_inv.rows * H_inv.cols * sizeof(double));
 

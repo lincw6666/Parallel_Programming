@@ -400,9 +400,11 @@ int main(int argc, const char* argv[])
         if(CorList[c_len][0]<=0)
             break;
     }
-    struct timeval start, end;
-    struct timeval  w_start, w_end;
-    unsigned long duration, w_duration;
+
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // RANSAC
     double **ans_H;
@@ -411,12 +413,15 @@ int main(int argc, const char* argv[])
         ans_H[i] = new double[3];
     }   
     ran ransac(N_TIMES);
-    gettimeofday(&start, NULL);
     ransac.cal_ransac(CorList, c_len, ans_H);
-    gettimeofday(&end, NULL);
-    duration = 1000000 * (end.tv_sec-start.tv_sec)+ end.tv_usec-start.tv_usec;
     #ifdef OMP
-    cout<<"method : omp ransac\niter : "<<N_TIMES<<"\ntime : "<< duration << "s"<<endl;
+    // -----> RANSAC time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    cout << "RANSAC execution time: " << setprecision(6) << elapsed << endl;
+    // <-----
     #endif
     #ifndef OMP
     cout<<"method : original \ntime : "<< duration << "ms"<<endl;
@@ -437,6 +442,8 @@ int main(int argc, const char* argv[])
         }
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     img_shape[0] = img1.rows;
     img_shape[1] = img1.cols;
     img_shape[2] = img1.channels();
@@ -447,7 +454,6 @@ int main(int argc, const char* argv[])
     // Create output image
     uint8_t *out_img = (uint8_t *)malloc(output_shape[0] * output_shape[1] *
                                          output_shape[2] * sizeof(uint8_t));
-    gettimeofday(&w_start, NULL);
     // Stitch image
     out_img = (uint8_t *)(warp((const uint8_t *)img1.data, img_shape, ans_H, out_img, output_shape));
 
@@ -460,10 +466,14 @@ int main(int argc, const char* argv[])
             }
         }
     }
-    gettimeofday(&w_end, NULL);
-    w_duration = 1000000 * (w_end.tv_sec-w_start.tv_sec)+ w_end.tv_usec-w_start.tv_usec;
-    cout<<"method : pthread warp\ntime : "<< w_duration << "s"<<endl;
-    cout<<"method : pthread total \nthread num : "<<nthread<<"\ntime : "<< duration + w_duration << "s"<<endl;
+
+    // -----> Warping time
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    cout << "Warping execution time: " << setprecision(6) << elapsed << endl;
+    // <-----
 
     // Draw output image
     Mat result(output_shape[0], output_shape[1], CV_8UC3, (void *)out_img);

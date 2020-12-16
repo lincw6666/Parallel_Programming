@@ -16,7 +16,7 @@ using namespace cv::xfeatures2d;
 using namespace std;
 #define NUM_KP 1500
 #define PTHREAD
-#define nthread 12
+#define nthread 16
 int n_times=100000;
 
 struct KP{
@@ -45,6 +45,18 @@ typedef struct
     uint8_t *out_img;
     int *output_shape;
 } Arg2; // 傳入 thread 的參數型別
+
+typedef struct
+{
+    int thread_id;
+    int start;
+    int end;
+    const uint8_t *img;
+    int *img_shape;
+    int offset;
+    uint8_t *out_img;
+    int *output_shape;
+} Arg3; // 傳入 thread 的參數型別
 
 int index_array[16][4];
 int line_array[16];
@@ -465,6 +477,24 @@ void* warp(void *para)
     }
     
 }
+
+void* copy_img2out_img(void *para) {
+    Arg3 *thread_arg = (Arg3*)para;
+    const u_int8_t *img = thread_arg->img;
+    int *img_shape = thread_arg->img_shape;
+    int offset = thread_arg->offset;
+    uint8_t *out_img = thread_arg->out_img;
+    int *output_shape = thread_arg->output_shape;
+
+    for (int i = thread_arg->start; i < thread_arg->end; i++) {
+        for (int j = 0; j < img_shape[1]; j++) {
+            for (int c = 0; c < img_shape[2]; c++) {
+                if (out_img[i*output_shape[1]*output_shape[2] + (j+offset)*output_shape[2] + c] == 0)
+                    out_img[i*output_shape[1]*output_shape[2] + (j+offset)*output_shape[2] + c] = img[i*img_shape[1]*img_shape[2] + j*img_shape[2] + c];
+            }
+        }
+    }
+}
 #endif
 
 int main(int argc, const char* argv[])
@@ -535,6 +565,7 @@ int main(int argc, const char* argv[])
     
     pthread_t threadID[nthread];
     Arg2 thread_arg[nthread];
+    Arg3 thread_arg2[nthread];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -556,21 +587,44 @@ int main(int argc, const char* argv[])
     // Stitch image
     // out_img = (uint8_t *)(warp((const uint8_t *)img1.data, img_shape, ans_H, out_img, output_shape));
 
-    // 回收性質設定
-    pthread_attr_destroy(&attr);
-    void *status;
-    
     for(int i = 0; i < nthread; i++){
         pthread_join(threadID[i], NULL);
     }
+
+    img_shape[0] = img2.rows;
+    img_shape[1] = img2.cols;
+    img_shape[2] = img2.channels();
+    step = img2.rows / nthread;
+    for(int i = 0; i < nthread; i++){
+        thread_arg2[i].thread_id = i;
+        thread_arg2[i].start = i * step;
+        thread_arg2[i].end = (i + 1) * step;
+        thread_arg2[i].img = (const uint8_t *)img2.data;
+        thread_arg2[i].img_shape = img_shape;
+        thread_arg2[i].offset = img1.cols;
+        thread_arg2[i].out_img = out_img;
+        thread_arg2[i].output_shape = output_shape;
+        if( i == (nthread -1))
+            thread_arg2[i].end = img2.rows;
+        pthread_create(&threadID[i], &attr, copy_img2out_img,
+                       (void *)&thread_arg2[i]);
+    }
+
+    // 回收性質設定
+    pthread_attr_destroy(&attr);
+
     // Copy @img2 to output image
-    for (int i = 0; i < img2.rows; i++) {
+    /*for (int i = 0; i < img2.rows; i++) {
         for (int j = 0; j < img2.cols; j++) {
             for (int c = 0; c < img2.channels(); c++) {
                 if (out_img[i*output_shape[1]*output_shape[2] + (j+img1.cols)*output_shape[2] + c] == 0)
                     out_img[i*output_shape[1]*output_shape[2] + (j+img1.cols)*output_shape[2] + c] = img2.data[i*img2.cols*img2.channels() + j*img2.channels() + c];
             }
         }
+    }*/
+
+    for(int i = 0; i < nthread; i++){
+        pthread_join(threadID[i], NULL);
     }
 
     // -----> Warping time

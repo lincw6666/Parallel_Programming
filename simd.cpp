@@ -451,11 +451,34 @@ int main(int argc, const char* argv[])
 
     // Copy @img2 to output image
     for (int i = 0; i < img2.rows; i++) {
-        for (int j = 0; j < img2.cols; j++) {
-            for (int c = 0; c < img2.channels(); c++) {
+        int j;
+        for (j = 0; j+8 <= img2.cols*img2.channels(); j += 8) {
+            /*for (int c = 0; c < img2.channels(); c++) {
                 if (out_img[i*output_shape[1]*output_shape[2] + (j+img1.cols)*output_shape[2] + c] == 0)
                     out_img[i*output_shape[1]*output_shape[2] + (j+img1.cols)*output_shape[2] + c] = img2.data[i*img2.cols*img2.channels() + j*img2.channels() + c];
-            }
+            }*/
+            __m256i mm_out = _mm256_loadu_si256(
+                (__m256i const *)&out_img[i*output_shape[1]*output_shape[2]
+                                          + img1.cols*output_shape[2]
+                                          + j]);
+            __m256i mm_img = _mm256_loadu_si256(
+                (__m256i const *)&img2.data[i*img2.cols*img2.channels()
+                                            + j]);
+            __m256i ones = _mm256_setzero_si256();
+            __m256i mask = _mm256_cmpeq_epi8(mm_out, ones);
+
+            mm_img = _mm256_and_si256(mm_img, mask);
+            mm_out = _mm256_or_si256(mm_out, mm_img);
+            _mm256_storeu_si256(
+                (__m256i *)&out_img[i*output_shape[1]*output_shape[2]
+                                    + img1.cols*output_shape[2]
+                                    + j],
+                mm_out);
+        }
+        // Do the remain parts
+        for (; j < img2.cols*img2.channels(); j++) {
+            if (out_img[i*output_shape[1]*output_shape[2] + img1.cols*output_shape[2] + j] == 0)
+                out_img[i*output_shape[1]*output_shape[2] + img1.cols*output_shape[2] + j] = img2.data[i*img2.cols*img2.channels() + j];
         }
     }
 

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BLOCK_SIZE 25
+#define BLOCK_SIZE 16
 
 __global__ void mandelKernel(
     int *d_out, size_t pitch,
@@ -44,9 +44,11 @@ void hostFE (float upperX, float upperY, float lowerX, float lowerY, int* img, i
     float stepY = (upperY - lowerY) / resY;
 
     int *d_out; // Mandelbort result on device
+    int size = resX * resY * sizeof(int);
 
     // Allocate memory on host & device. 
     size_t pitch;
+    cudaHostRegister(img, size, cudaHostRegisterMapped);
     cudaMallocPitch((void **)&d_out, &pitch, resX*sizeof(int), resY);
 
     // CUDA kernel function.
@@ -64,5 +66,6 @@ void hostFE (float upperX, float upperY, float lowerX, float lowerY, int* img, i
                  resX*sizeof(int), resY, cudaMemcpyDeviceToHost);
 
     // Free memory.
+    cudaHostUnregister(img);
     cudaFree(d_out);
 }

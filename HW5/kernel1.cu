@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BLOCK_SIZE 25
+#define BLOCK_SIZE 16
 
 __global__ void mandelKernel(
     int *d_out,

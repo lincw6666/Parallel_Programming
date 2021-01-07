@@ -74,104 +74,75 @@ void hostFE(int filterWidth, float *filter, int imageHeight, int imageWidth,
     // ------------------------------------------------------------------------
 
     // Copy data to their respective memory buffers.
-    status = clEnqueueWriteBuffer(command_queue, img_height_mem, CL_TRUE, 0,
-                                  sizeof(int), &imageHeight, 0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, img_width_mem, CL_TRUE, 0,
-                                  sizeof(int), &imageWidth, 0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, filter_width_mem, CL_TRUE, 0,
-                                  sizeof(int), &filterWidth, 0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, filter_mem, CL_TRUE, 0,
-                                  filterSize * sizeof(float), filter,
-                                  0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, offset_x_mem, CL_TRUE, 0,
-                                  sizeof(int), &offset_x[0], 0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, offset_y_mem, CL_TRUE, 0,
-                                  sizeof(int), &offset_y[0], 0, NULL, NULL);
-    printf("%d ", status);
-    status = clEnqueueWriteBuffer(command_queue, in_mem, CL_TRUE, 0, 
-                                  imageSize * sizeof(float), inputImage,
-                                  0, NULL, NULL);
-    printf("%d ", status);
+    clEnqueueWriteBuffer(command_queue, img_height_mem, CL_TRUE, 0,
+                         sizeof(int), &imageHeight, 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, img_width_mem, CL_TRUE, 0,
+                         sizeof(int), &imageWidth, 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, filter_width_mem, CL_TRUE, 0,
+                         sizeof(int), &filterWidth, 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, filter_mem, CL_TRUE, 0,
+                         filterSize * sizeof(float), filter,
+                         0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, offset_x_mem, CL_TRUE, 0,
+                         sizeof(int), &offset_x[0], 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, offset_y_mem, CL_TRUE, 0,
+                         sizeof(int), &offset_y[0], 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, in_mem, CL_TRUE, 0, 
+                         imageSize * sizeof(float), inputImage,
+                         0, NULL, NULL);
 
     // Set the arguments of the kernel
-    status = clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_height_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_width_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 2, sizeof(cl_mem), &filter_width_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&filter_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &offset_x_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 5, sizeof(cl_mem), &offset_y_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&in_mem);
-    printf("%d ", status);
-    status = clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&out_mem);
-    printf("%d ", status);
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_height_mem);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_width_mem);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &filter_width_mem);
+    clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&filter_mem);
+    clSetKernelArg(kernel, 4, sizeof(cl_mem), &offset_x_mem);
+    clSetKernelArg(kernel, 5, sizeof(cl_mem), &offset_y_mem);
+    clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&in_mem);
+    clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&out_mem);
 
     // Execute the OpenCL kernel
-    status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL,
-                                    global_work_size[0], 0, NULL, NULL, NULL);
-    printf("%d ", status);
+    clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL,
+                           global_work_size[0], 0, NULL, NULL, NULL);
 
     // ------------------------------------------------------------------------
     // Now deal with upper, bottom, left and right parts.
     // ------------------------------------------------------------------------
     for (int i = 1; i < 5; ++i) {
-        status = clEnqueueWriteBuffer(command_queue, offset_x_mem, CL_TRUE, 0,
-                                      sizeof(int), &offset_x[i], 0, NULL, NULL);
-        printf("%d ", status);
-        status = clEnqueueWriteBuffer(command_queue, offset_y_mem, CL_TRUE, 0,
-                                      sizeof(int), &offset_y[i], 0, NULL, NULL);
-        printf("%d ", status);
+        clEnqueueWriteBuffer(command_queue, offset_x_mem, CL_TRUE, 0,
+                             sizeof(int), &offset_x[i], 0, NULL, NULL);
+        clEnqueueWriteBuffer(command_queue, offset_y_mem, CL_TRUE, 0,
+                             sizeof(int), &offset_y[i], 0, NULL, NULL);
 
         // Set the arguments of the kernel
-        status = clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_height_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_width_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 2, sizeof(cl_mem), &filter_width_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&filter_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &offset_x_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 5, sizeof(cl_mem), &offset_y_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&in_mem);
-        printf("%d ", status);
-        status = clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&out_mem);
-        printf("%d ", status);
+        clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_height_mem);
+        clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_width_mem);
+        clSetKernelArg(kernel, 2, sizeof(cl_mem), &filter_width_mem);
+        clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&filter_mem);
+        clSetKernelArg(kernel, 4, sizeof(cl_mem), &offset_x_mem);
+        clSetKernelArg(kernel, 5, sizeof(cl_mem), &offset_y_mem);
+        clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&in_mem);
+        clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&out_mem);
 
-        status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL,
-                                        global_work_size[i], 0, NULL, NULL, NULL);
-        printf("%d ", status);
+        clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL,
+                               global_work_size[i], 0, NULL, NULL, NULL);
     }
 
     // Read the memory buffer C on the device to the local variable C
-    status = clEnqueueReadBuffer(command_queue, out_mem, CL_TRUE, 0, 
-                                 imageSize * sizeof(float), outputImage,
-                                 0, NULL, NULL);
-    printf("%d ", status);
+    clEnqueueReadBuffer(command_queue, out_mem, CL_TRUE, 0, 
+                        imageSize * sizeof(float), outputImage,
+                        0, NULL, NULL);
 
     // Clean up
-    status = clFinish(command_queue);
-    printf("%d\n", status);
-    status = clReleaseKernel(kernel);
-    status = clReleaseMemObject(img_height_mem);
-    status = clReleaseMemObject(img_width_mem);
-    status = clReleaseMemObject(filter_width_mem);
-    status = clReleaseMemObject(filter_mem);
-    status = clReleaseMemObject(offset_x_mem);
-    status = clReleaseMemObject(offset_y_mem);
-    status = clReleaseMemObject(in_mem);
-    status = clReleaseMemObject(out_mem);
-    status = clReleaseCommandQueue(command_queue);
+    clFinish(command_queue);
+    clReleaseKernel(kernel);
+    clReleaseMemObject(img_height_mem);
+    clReleaseMemObject(img_width_mem);
+    clReleaseMemObject(filter_width_mem);
+    clReleaseMemObject(filter_mem);
+    clReleaseMemObject(offset_x_mem);
+    clReleaseMemObject(offset_y_mem);
+    clReleaseMemObject(in_mem);
+    clReleaseMemObject(out_mem);
+    clReleaseCommandQueue(command_queue);
 }

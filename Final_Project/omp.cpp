@@ -16,7 +16,7 @@ using namespace cv::xfeatures2d;
 using namespace std;
 #define NUM_KP 1500
 #define OMP
-#define nthread 8
+#define nthread 16
 #define N_TIMES 100000
 
 struct KP{
@@ -291,7 +291,7 @@ void* warp(
 
     // Backproject pixels on @out_img to @img
     #ifdef OMP
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(dynamic, 2)
     for (int row = 0; row < output_shape[0]; row++) {
         for (int col = 0; col < output_shape[1]; col++) {
             float pj_x, pj_y;   // back projected coordinate of x and y
@@ -389,9 +389,9 @@ void* warp(
 int main(int argc, const char* argv[])
 {
     // 放右邊的圖
-    string imname1 = "le2.jpg";
+    string imname1 = "1.jpg";
     // 放左邊的圖
-    string imname2 = "ri.jpg";
+    string imname2 = "2.jpg";
     // 讀取兩張圖的SIFT並做brute force match
     double ** CorList = sift_match(imname1, imname2);
     // 計算特徵點的數量
@@ -427,8 +427,8 @@ int main(int argc, const char* argv[])
     cout<<"method : original \ntime : "<< duration << "ms"<<endl;
     #endif 
     // Warp images
-    const Mat img1 = imread("le2.jpg", IMREAD_COLOR); // Load as grayscale
-    const Mat img2 = imread("ri.jpg", IMREAD_COLOR); // Load as grayscale
+    const Mat img1 = imread(imname1, IMREAD_COLOR); // Load as grayscale
+    const Mat img2 = imread(imname2, IMREAD_COLOR); // Load as grayscale
     Mat H_inv = (Mat_<double>(3,3) << ans_H[0][0], ans_H[0][1], ans_H[0][2],
                                       ans_H[1][0], ans_H[1][1], ans_H[1][2],
                                       ans_H[2][0], ans_H[2][1], ans_H[2][2]);
@@ -458,6 +458,7 @@ int main(int argc, const char* argv[])
     out_img = (uint8_t *)(warp((const uint8_t *)img1.data, img_shape, ans_H, out_img, output_shape));
 
     // Copy @img2 to output image
+    #pragma omp parallel for schedule(dynamic, 2)
     for (int i = 0; i < img2.rows; i++) {
         for (int j = 0; j < img2.cols; j++) {
             for (int c = 0; c < img2.channels(); c++) {
